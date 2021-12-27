@@ -27,6 +27,8 @@ class Vector:
     def mag_sq(self):
         return self.x**2 + self.y**2 + self.z**2
 
+    def __neg__(self):
+        return self*(-1)
 
     def __add__(self, other):
         return Vector(
@@ -39,6 +41,12 @@ class Vector:
                 factor*self.x,
                 factor*self.y,
                 factor*self.z)
+
+    def __rmul__(self, factor):
+        return self*factor
+
+    def __truediv__(self, factor):
+        return self*(1/factor)
 
     def __sub__(self, other):
         return other*(-1)+self
@@ -63,16 +71,43 @@ class Particle:
     def move(self, dt):
         self.position += self.velocity*dt
 
+    def is_colliding(self, other):
+        return other.is_within(self.position) or self.is_within(other.position)
+
+    def is_within(self, vec):
+        # TODO add radius support
+        return abs(self.position-vec) <= 1
+
     @property
     def momentum(self):
         return self.velocity * self.mass
 
     @property
     def kinetic_energy(self):
-        return 1/2 * self.mass * self.velocity.mag_sq()
+        return self.mass * self.velocity.mag_sq() / 2
 
     def __str__(self):
         return f"Particle m={self.mass} @{self.position} v={self.velocity}"
+
+class Wall(Particle):
+    def __init__(self, start, end):
+        self.mass = float("Inf")
+        self.position = (start+end)/2
+        self.velocity = 0
+
+        self.start = start
+        self.end = end
+
+    @property
+    def momentum(self):
+        return 0
+
+    @property
+    def kinetic_energy(self):
+        return 0
+
+    def __str__(self):
+        return f"Wall from {self.position} to {self.end}"
 
 def rebase(pos, vel, p):
     return Particle(
@@ -103,13 +138,16 @@ class System:
         dt = self.next_collision_dt()
         init_p = self.momentum()
         init_k = self.kinetic_energy()
+        count = 0
+
         print(dt)
         while t + dt < end_t:
             self.move(dt)
             t += dt
 
             for p, q in self.pairs:
-                if abs(p.position-q.position) < 1:
+                if p.is_within(q.position):
+                    count += 1
                     collide(p, q)
                     if False:
                         print(f'\nbump\n\t{p}\n\t{q}')
@@ -123,6 +161,7 @@ class System:
         print("init")
         print(init_p, init_k)
         print(self.momentum(), self.kinetic_energy())
+        print(count)
         print(t)
 
 
@@ -148,14 +187,15 @@ def collide(p1, p2, dt = 0):
     if dt != 0:
         return collide(p1.move(dt), p2.move(dt))
 
-    assert abs(p1.position - p2.position) < 1, "Particles aren't colliding..."
+    assert p1.is_colliding(p2), "Particles aren't colliding..."
 
     ps = System([p1, p2])
     momentum = ps.momentum()
-    com_vel = momentum*(1/(p1.mass+p2.mass))
+    com_vel = momentum/(p1.mass+p2.mass)
 
     p1.velocity = ((com_vel - p1.velocity) + com_vel)
     p2.velocity = ((com_vel - p2.velocity) + com_vel)
+
 
 def collision_time(p1, p2):
     ps = System([p1, p2])
@@ -169,7 +209,7 @@ def collision_time(p1, p2):
     p1_adj.move(t_from_com)
     p2_adj.move(t_from_com)
 
-    if abs(p1_adj.position-p2_adj.position) < 1:
+    if p1_adj.is_colliding(p2_adj):
         return t_from_com
 
     return float("Inf")
@@ -195,7 +235,7 @@ def p_in_box(n = 10):
 
 
 if __name__ == "__main__":
-    ps = p_in_box(250)
+    ps = p_in_box(10)
     t = 0
     dt = 1
     #print([str(p.position) for p in ps._particles])
